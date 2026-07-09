@@ -1,5 +1,7 @@
+from __future__ import annotations  # Добавьте эту строку первой
 import mailbox
 from pathlib import Path
+
 
 class ThunderbirdMail:
     def __init__(self, tb_instance: ThunderbirdLinux):
@@ -18,13 +20,15 @@ class ThunderbirdMail:
         mbox.lock()
         try:
             for msg_id, message in mbox.items():
-                messages.append({
-                    "id": msg_id,
-                    "from": message["from"],
-                    "subject": message["subject"],
-                    "date": message["date"],
-                    "body": self._get_body(message)
-                })
+                messages.append(
+                    {
+                        "id": msg_id,
+                        "from": message["from"],
+                        "subject": message["subject"],
+                        "date": message["date"],
+                        "body": self._get_body(message),
+                    }
+                )
         finally:
             mbox.unlock()
 
@@ -39,4 +43,3 @@ class ThunderbirdMail:
         else:
             return message.get_payload(decode=True).decode(errors="ignore")
         return ""
-

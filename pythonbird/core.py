@@ -5,6 +5,7 @@ import subprocess
 import configparser
 from pathlib import Path
 
+
 class ThunderbirdLinux:
     def __init__(self):
         self.base_dir = self._find_thunderbird_dir()
@@ -22,7 +23,9 @@ class ThunderbirdLinux:
         elif snap_path.exists():
             return snap_path
         else:
-            raise FileNotFoundError("Thunderbird directory not found (checked APT/RPM and Snap paths).")
+            raise FileNotFoundError(
+                "Thunderbird directory not found (checked APT/RPM and Snap paths)."
+            )
 
     def _get_active_profile_dir(self) -> Path:
         """Determines the active/default profile directory using profiles.ini."""
@@ -34,7 +37,10 @@ class ThunderbirdLinux:
         config.read(ini_path)
 
         for section in config.sections():
-            if section.startswith("Profile") and config.get(section, "Default", fallback="0") == "1":
+            if (
+                section.startswith("Profile")
+                and config.get(section, "Default", fallback="0") == "1"
+            ):
                 is_relative = config.getint(section, "IsRelative", fallback=1)
                 path_value = config.get(section, "Path")
 
@@ -55,21 +61,29 @@ class ThunderbirdLinux:
         if not prefs_path.exists():
             return prefs
 
-        pattern = re.compile(r'user_pref\s*\(\s*["\']([^"\']+)["\']\s*,\s*["\']?([^"\')]+)["\']?\s*\);')
+        pattern = re.compile(
+            r'user_pref\s*\(\s*["\']([^"\']+)["\']\s*,\s*["\']?([^"\')]+)["\']?\s*\);'
+        )
 
         with open(prefs_path, "r", encoding="utf-8", errors="ignore") as f:
             for line in f:
                 match = pattern.search(line)
                 if match:
                     key, value = match.groups()
-                    prefs[key] = value.strip('"\'')
+                    prefs[key] = value.strip("\"'")
         return prefs
 
     def _detect_system_command(self) -> str:
         """Detects how Thunderbird is installed to trigger CLI commands."""
         if shutil.which("thunderbird"):
             return "thunderbird"
-        elif shutil.which("flatpak") and subprocess.run(["flatpak", "info", "org.mozilla.Thunderbird"], capture_output=True).returncode == 0:
+        elif (
+            shutil.which("flatpak")
+            and subprocess.run(
+                ["flatpak", "info", "org.mozilla.Thunderbird"], capture_output=True
+            ).returncode
+            == 0
+        ):
             return "flatpak run org.mozilla.Thunderbird"
         return "thunderbird"
 
@@ -81,12 +95,18 @@ class ThunderbirdLinux:
                 accounts.append(val)
         return accounts
 
-    def open_compose_window(self, to: str, subject: str, body: str, attachment_path: str = None):
+    def open_compose_window(
+        self, to: str, subject: str, body: str, attachment_path: str = None
+    ):
         """Opens the Thunderbird composition window with pre-filled fields."""
         compose_args = f"to='{to}',subject='{subject}',body='{body}'"
         if attachment_path:
             compose_args += f",attachment='{attachment_path}'"
 
-        full_command = f"{self.cmd} -compose \"{compose_args}\""
-        subprocess.Popen(full_command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
+        full_command = f'{self.cmd} -compose "{compose_args}"'
+        subprocess.Popen(
+            full_command,
+            shell=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )

@@ -1,5 +1,7 @@
+from __future__ import annotations
 import sqlite3
 from pathlib import Path
+
 
 class ThunderbirdContacts:
     def __init__(self, tb_instance: ThunderbirdLinux):
@@ -18,12 +20,11 @@ class ThunderbirdContacts:
 
         try:
             # Thunderbird stores main contacts in the 'cards' table
-            cursor.execute("SELECT displayName, primaryEmail FROM cards WHERE primaryEmail IS NOT NULL")
+            cursor.execute(
+                "SELECT displayName, primaryEmail FROM cards WHERE primaryEmail IS NOT NULL"
+            )
             for row in cursor.fetchall():
-                contacts.append({
-                    "name": row[0],
-                    "email": row[1]
-                })
+                contacts.append({"name": row[0], "email": row[1]})
         except sqlite3.OperationalError:
             # Fallback or handling if table schema changes
             pass
@@ -31,4 +32,3 @@ class ThunderbirdContacts:
             conn.close()
 
         return contacts
-
