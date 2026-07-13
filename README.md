@@ -8,6 +8,12 @@ A lightweight, zero-dependency Python library for interacting with local Mozilla
 - **Manual Profile Selection:** Allows applications to work with a specific profile or a backed-up profile directory.
 - **Preference Parsing:** Reads configured email accounts and supported values from `prefs.js`.
 - **Local Mail Reader:** Reads messages from Thunderbird Mbox files.
+- **Folder Discovery:** Lists and resolves local and account mail folders.
+- **Message Search:** Filters by sender, recipient, subject, content, date, and attachments.
+- **Typed Models:** Returns `Message`, `Attachment`, and `Contact` objects.
+- **Attachment Extraction:** Inspects and saves files attached to messages.
+- **Export:** Saves messages as EML or exports folders to JSON.
+- **High-Level API:** Groups profile, mail, contacts, search, compose, and export operations in `Thunderbird`.
 - **Memory-Efficient Iteration:** Supports reading large mailboxes without loading every message into memory.
 - **MIME Decoding:** Decodes encoded headers, declared character sets, plain-text bodies, and HTML bodies.
 - **Address Book Access:** Reads contacts from Thunderbird SQLite address books in read-only mode.
@@ -43,6 +49,35 @@ pip install pythonbird
 ```
 
 ## Quick Start
+
+The recommended API in version 0.2.0 uses one high-level object:
+
+```python
+from pythonbird import Thunderbird
+
+tb = Thunderbird()
+
+print(tb.accounts())
+print(tb.folders())
+
+for message in tb.messages("Inbox", limit=20):
+    print(message.subject, message.sender)
+
+results = tb.search(
+    "Inbox",
+    subject="report",
+    has_attachments=True,
+)
+
+for attachment in results[0].attachments:
+    attachment.save("downloads/")
+
+tb.export_json("inbox.json", folder="Inbox")
+```
+
+The low-level `ThunderbirdLinux`, `ThunderbirdMail`, and
+`ThunderbirdContacts` APIs from version 0.1.x remain available.
+
 
 ```python
 from pythonbird import (
@@ -310,7 +345,7 @@ Applications should still keep backups of important Thunderbird profiles. No lib
 
 ## Version
 
-Current version: **0.1.2**
+Current version: **0.2.0**
 
 ## License
 

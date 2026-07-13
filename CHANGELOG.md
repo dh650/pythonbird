@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-07-13
+
+### Added
+
+- High-level `Thunderbird` object-oriented API.
+- Typed `Message`, `Attachment`, and `Contact` dataclasses.
+- Discovery and resolution of Thunderbird mail folders.
+- Message filtering by sender, recipient, subject, body content, date, and attachment presence.
+- Attachment metadata and safe attachment saving.
+- EML message export and JSON folder export.
+- Object-based contact API.
+- Tests covering the new API and backward compatibility.
+
+### Changed
+
+- Package version is now 0.2.0.
+- Documentation now recommends the high-level API for new projects.
+
+### Compatibility
+
+- The dictionary-based mail API from 0.1.x remains available.
+- Existing low-level classes remain publicly exported.
+
 ## [0.1.2] - 2026-07-10
 
 ### Added

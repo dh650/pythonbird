@@ -6,6 +6,7 @@ from typing import Optional, Union
 from urllib.parse import quote
 
 from .core import ThunderbirdLinux
+from .models import Contact
 
 
 class ThunderbirdContactsError(RuntimeError):
@@ -38,6 +39,20 @@ class ThunderbirdContacts:
             raise ThunderbirdContactsError(
                 f"Could not read Thunderbird address book: {db_path}"
             ) from error
+
+    def get_contact_models(
+        self,
+        database_path: Optional[Union[str, Path]] = None,
+        strict: bool = True,
+    ) -> list[Contact]:
+        """Return contacts as typed Contact objects."""
+        return [
+            Contact(name=item["name"], email=item["email"])
+            for item in self.get_all_contacts(
+                database_path=database_path,
+                strict=strict,
+            )
+        ]
 
     def _read_contacts(self, db_path: Path) -> list[dict]:
         database_uri = f"file:{quote(str(db_path))}?mode=ro"

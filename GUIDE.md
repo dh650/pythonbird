@@ -1,6 +1,6 @@
 # Pythonbird Developer Guide and API Reference
 
-This guide describes the public classes, methods, return values, and error-handling behavior available in `pythonbird` version **0.1.2**.
+This guide describes the public classes, methods, return values, and error-handling behavior available in `pythonbird` version **0.2.0**.
 
 ## Table of Contents
 
@@ -10,6 +10,50 @@ This guide describes the public classes, methods, return values, and error-handl
 4. [ThunderbirdContacts](#4-thunderbirdcontacts)
 5. [Error Handling](#5-error-handling)
 6. [Safety and Concurrent Access](#6-safety-and-concurrent-access)
+
+
+# 0. Recommended High-Level API
+
+Version 0.2.0 adds the `Thunderbird` facade while preserving the 0.1.x API.
+
+```python
+from pythonbird import Thunderbird
+
+tb = Thunderbird(profile_dir="/path/to/profile", command=["thunderbird"])
+
+folders = tb.folders()
+messages = tb.messages("Inbox", limit=100)
+contacts = tb.contacts()
+results = tb.search(subject="invoice", has_attachments=True)
+tb.export_json("inbox.json")
+```
+
+Messages, contacts, and attachments are represented by typed dataclasses:
+
+```python
+message.subject
+message.sender
+message.text_body
+message.html_body
+message.attachments
+
+attachment.filename
+attachment.content_type
+attachment.size
+attachment.save("downloads/")
+
+contact.name
+contact.email
+```
+
+A message can be saved in EML format:
+
+```python
+message.save_eml("message.eml")
+```
+
+Search supports `sender`, `recipient`, `subject`, `contains`, `after`,
+`before`, `has_attachments`, and `limit`.
 
 # 1. Architecture
 
