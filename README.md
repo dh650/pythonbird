@@ -1,5 +1,10 @@
 # pythonbird
 
+[![PyPI](https://img.shields.io/pypi/v/pythonbird)](https://pypi.org/project/pythonbird/)
+[![Python Versions](https://img.shields.io/pypi/pyversions/pythonbird)](https://pypi.org/project/pythonbird/)
+[![License](https://img.shields.io/github/license/rchbld/pythonbird)](LICENSE)
+[![PyPI Downloads](https://img.shields.io/pypi/dm/pythonbird)](https://pypi.org/project/pythonbird/)
+
 A lightweight, zero-dependency Python library for interacting with local Mozilla Thunderbird profiles, mailboxes, address books, and native compose windows on Linux.
 
 ## Features
