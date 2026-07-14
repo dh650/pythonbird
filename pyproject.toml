@@ -2,9 +2,9 @@
 name = "pythonbird"
 version = "0.2.0"
 description = "A Python library to interact with local Mozilla Thunderbird profiles and mail client data on Linux."
-authors = ["dh650 <martirosjan.acmc@gmail.com>"]
+authors = ["rchbld <diamondhead650@gmail.com>"]
 readme = "README.md"
-repository = "https://github.com/dh650/pythonbird"
+repository = "https://github.com/rchbld/pythonbird"
 keywords = ["thunderbird", "email", "mbox", "sqlite", "linux"]
 classifiers = [
     "Development Status :: 3 - Alpha",
