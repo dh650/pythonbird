@@ -5,353 +5,222 @@
 [![License](https://img.shields.io/github/license/rchbld/pythonbird)](LICENSE)
 [![PyPI Downloads](https://img.shields.io/pypi/dm/pythonbird)](https://pypi.org/project/pythonbird/)
 
-A lightweight, zero-dependency Python library for interacting with local Mozilla Thunderbird profiles, mailboxes, address books, and native compose windows on Linux.
+A lightweight, zero-dependency Python library for reading local Mozilla Thunderbird profiles, mailboxes, address books, and opening native compose windows on Linux.
+
+Current version: **0.3.0**
 
 ## Features
 
-- **Profile Auto-Detection:** Detects standard, Snap, and Flatpak Thunderbird profile directories.
-- **Manual Profile Selection:** Allows applications to work with a specific profile or a backed-up profile directory.
-- **Preference Parsing:** Reads configured email accounts and supported values from `prefs.js`.
-- **Local Mail Reader:** Reads messages from Thunderbird Mbox files.
-- **Folder Discovery:** Lists and resolves local and account mail folders.
-- **Message Search:** Filters by sender, recipient, subject, content, date, and attachments.
-- **Typed Models:** Returns `Message`, `Attachment`, and `Contact` objects.
-- **Attachment Extraction:** Inspects and saves files attached to messages.
-- **Export:** Saves messages as EML or exports folders to JSON.
-- **High-Level API:** Groups profile, mail, contacts, search, compose, and export operations in `Thunderbird`.
-- **Memory-Efficient Iteration:** Supports reading large mailboxes without loading every message into memory.
-- **MIME Decoding:** Decodes encoded headers, declared character sets, plain-text bodies, and HTML bodies.
-- **Address Book Access:** Reads contacts from Thunderbird SQLite address books in read-only mode.
-- **Native Compose Window:** Opens a Thunderbird compose window with a recipient, subject, body, and optional attachment.
-- **Safe Process Launching:** Starts Thunderbird without passing message fields through a system shell.
-
-## Documentation
-
-See the complete [Developer Guide and API Reference](GUIDE.md).
-
-Release history is available in [CHANGELOG.md](CHANGELOG.md).
+- Detects standard, Snap, and Flatpak Thunderbird profiles.
+- Supports explicitly selected or backed-up profile directories.
+- Reads configured accounts from `prefs.js`.
+- Discovers local and IMAP Mbox folders, including nested `.sbd` folders.
+- Returns typed `Message`, `Attachment`, and `Contact` objects.
+- Searches by addresses, subject, content, dates, attachments, flags, and tags.
+- Reads Thunderbird read, starred, replied, and forwarded status metadata.
+- Reads Thunderbird tags from `X-Mozilla-Keys`.
+- Saves attachments, EML files, decoded text bodies, and HTML bodies.
+- Exports folders to JSON.
+- Reads SQLite address books in read-only mode.
+- Opens Thunderbird compose windows without using a system shell.
+- Preserves the dictionary-based API from pythonbird 0.1.x.
 
 ## Requirements
 
 - Linux
 - Python 3.9 or newer
-- Mozilla Thunderbird for compose-window functionality
+- Mozilla Thunderbird only when opening compose windows
 
-Reading an explicitly supplied profile directory does not require Thunderbird to be installed. Opening a compose window requires an available Thunderbird command.
+Reading an explicitly supplied profile or backup does not require Thunderbird to be installed.
 
 ## Installation
-
-### Using Poetry
-
-```bash
-poetry add pythonbird
-```
-
-### Using pip
 
 ```bash
 pip install pythonbird
 ```
 
-## Quick Start
+or:
 
-The recommended API in version 0.2.2 uses one high-level object:
+```bash
+poetry add pythonbird
+```
+
+## Quick start
 
 ```python
-from pythonbird import Thunderbird
+from pythonbird import Thunderbird, __version__
+
+print(__version__)
 
 tb = Thunderbird()
 
+print(tb.profile_dir)
 print(tb.accounts())
 print(tb.folders())
 
 for message in tb.messages("Inbox", limit=20):
-    print(message.subject, message.sender)
+    print(message.subject, message.sender, message.read)
+```
+
+Use an explicit profile when automatic detection is not appropriate:
+
+```python
+tb = Thunderbird(
+    profile_dir="/home/user/.thunderbird/example.default-release",
+    command=["thunderbird"],
+)
+```
+
+## Folders
+
+Canonical folder names use `/` for nesting:
+
+```python
+for folder in tb.folders():
+    print(folder)
+
+messages = tb.messages("Archive/2026")
+```
+
+A unique short folder name is accepted. When several folders have the same short name, use the full name returned by `folders()`.
+
+## Searching messages
+
+```python
+from datetime import date
 
 results = tb.search(
     "Inbox",
+    sender="github.com",
+    recipient="example.com",
     subject="report",
+    contains="release",
+    after=date(2026, 1, 1),
+    before=date(2026, 12, 31),
     has_attachments=True,
-)
-
-for attachment in results[0].attachments:
-    attachment.save("downloads/")
-
-tb.export_json("inbox.json", folder="Inbox")
-```
-
-The low-level `ThunderbirdLinux`, `ThunderbirdMail`, and
-`ThunderbirdContacts` APIs from version 0.1.x remain available.
-
-
-```python
-from pythonbird import (
-    ThunderbirdContacts,
-    ThunderbirdLinux,
-    ThunderbirdMail,
-)
-
-# Automatically detect the active Thunderbird profile.
-tb = ThunderbirdLinux()
-
-print(f"Active profile: {tb.profile_dir}")
-print(f"Configured accounts: {tb.get_mail_accounts()}")
-
-# Read up to 100 messages from the local Inbox.
-mail_manager = ThunderbirdMail(tb)
-messages = mail_manager.get_local_inbox_messages(limit=100)
-
-for message in messages:
-    print(f"From: {message['from']}")
-    print(f"Subject: {message['subject']}")
-    print(f"Body: {message['body'][:100]}")
-    print()
-
-# Read contacts from abook.sqlite.
-contact_manager = ThunderbirdContacts(tb)
-contacts = contact_manager.get_all_contacts()
-
-for contact in contacts:
-    print(f"{contact['name']}: {contact['email']}")
-
-# Open a native Thunderbird compose window.
-tb.open_compose_window(
-    to="developer@example.com",
-    subject="Draft created with pythonbird",
-    body="Hello from pythonbird!",
+    unread=True,
+    starred=True,
+    replied=False,
+    forwarded=False,
+    tags=["work", "important"],
+    limit=50,
 )
 ```
 
-## Using a Specific Profile
-
-Automatic profile detection is used by default:
+For large mailboxes, use the iterator:
 
 ```python
-tb = ThunderbirdLinux()
+for message in tb.iter_search("Inbox", unread=True):
+    print(message.subject)
 ```
 
-A profile can also be supplied explicitly:
+Tag matching is case-insensitive and all requested tags must be present. Messages without a valid Thunderbird status do not match `unread=True` or `unread=False`.
+
+## Message metadata
 
 ```python
-tb = ThunderbirdLinux(
-    profile_dir="/home/user/.thunderbird/example.default-release",
-)
+message = tb.messages("Inbox", limit=1)[0]
+
+print(message.sender)
+print(message.recipients)
+print(message.subject)
+print(message.date)
+print(message.text_body)
+print(message.html_body)
+print(message.read)       # True, False, or None when status is unavailable
+print(message.starred)
+print(message.replied)
+print(message.forwarded)
+print(message.tags)
 ```
 
-This is useful when:
+Status and tag support is read-only. Version 0.3.0 does not modify Mbox files or Thunderbird indexes.
 
-- multiple profiles exist;
-- Thunderbird uses a custom profile location;
-- a backed-up profile needs to be inspected;
-- tests should not use the real user profile.
-
-The launch command can also be supplied explicitly:
+## Attachments and export
 
 ```python
-tb = ThunderbirdLinux(
-    profile_dir="/path/to/profile",
-    command=["flatpak", "run", "org.mozilla.Thunderbird"],
-)
+message.save_attachments("downloads")
+message.save_eml("exports/message.eml")
+message.save_text("exports/message.txt")
+message.save_html("exports/message.html")
+
+tb.export_json("exports/inbox.json", folder="Inbox", limit=100)
 ```
 
-## Reading Mail
+Existing files are not overwritten unless `overwrite=True` is explicitly passed to a model save method.
 
-### Read the Local Inbox
+## Contacts
 
 ```python
-mail_manager = ThunderbirdMail(tb)
-
-messages = mail_manager.get_local_inbox_messages(limit=50)
+for contact in tb.contacts():
+    print(contact.name, contact.email)
 ```
 
-Each message is returned as a dictionary:
+Read a different Thunderbird address book:
 
 ```python
-{
-    "id": 0,
-    "from": "Sender <sender@example.com>",
-    "to": "Recipient <recipient@example.com>",
-    "subject": "Message subject",
-    "date": "Fri, 10 Jul 2026 12:00:00 +0300",
-    "body": "Preferred plain-text body",
-    "text_body": "Plain-text body",
-    "html_body": "<p>HTML body</p>",
-}
-```
-
-### Iterate Over a Large Inbox
-
-```python
-for message in mail_manager.iter_local_inbox_messages():
-    print(message["subject"])
-```
-
-This avoids creating a list containing every message in memory.
-
-### Read Another Mbox File
-
-```python
-messages = mail_manager.get_mbox_messages(
-    "/home/user/.thunderbird/profile/Mail/Local Folders/Sent",
-    limit=100,
-)
-```
-
-An arbitrary Mbox file can also be iterated:
-
-```python
-for message in mail_manager.iter_mbox_messages(
-    "/path/to/mailbox",
-):
-    print(message["subject"])
-```
-
-## Reading Contacts
-
-```python
-contact_manager = ThunderbirdContacts(tb)
-contacts = contact_manager.get_all_contacts()
-```
-
-By default, contacts are read from:
-
-```text
-<profile>/abook.sqlite
-```
-
-A different database can be supplied:
-
-```python
-contacts = contact_manager.get_all_contacts(
+contacts = tb.contacts(
     database_path="/path/to/address-book.sqlite",
+    strict=True,
 )
 ```
 
-Database and schema errors raise `ThunderbirdContactsError` by default.
+With `strict=False`, SQLite and schema errors produce an empty list instead of raising `ThunderbirdContactsError`.
 
-To return an empty list instead:
-
-```python
-contacts = contact_manager.get_all_contacts(strict=False)
-```
-
-## Opening a Compose Window
+## Compose window
 
 ```python
-tb.open_compose_window(
-    to="friend@example.com",
-    subject="Report",
-    body="The report is attached.",
-    attachment_path="/home/user/Documents/report.pdf",
+tb.compose(
+    to="developer@example.com",
+    subject="Created with pythonbird",
+    body="Hello from pythonbird!",
+    attachment_path="/path/to/report.pdf",
 )
 ```
 
-The attachment must exist. Otherwise, `FileNotFoundError` is raised.
+The compose window is opened through an argument list without `shell=True`. The attachment must exist.
 
-Thunderbird is launched without `shell=True`.
+## Low-level and legacy APIs
 
-## Error Handling
+The public low-level classes remain available:
 
 ```python
-from pythonbird import (
-    ThunderbirdContacts,
-    ThunderbirdContactsError,
-    ThunderbirdLinux,
-)
+from pythonbird import ThunderbirdContacts, ThunderbirdLinux, ThunderbirdMail
 
-try:
-    tb = ThunderbirdLinux()
-    contacts = ThunderbirdContacts(tb).get_all_contacts()
-
-except FileNotFoundError as error:
-    print(f"Required profile, executable, or file was not found: {error}")
-
-except PermissionError as error:
-    print(f"Access was denied: {error}")
-
-except ThunderbirdContactsError as error:
-    print(f"Address book could not be read: {error}")
+client = ThunderbirdLinux()
+mail = ThunderbirdMail(client)
+contacts = ThunderbirdContacts(client)
 ```
 
-## Running Tests
+The 0.1.x dictionary API is preserved:
 
-If Poetry dependencies are already installed:
+```python
+messages = mail.get_local_inbox_messages(limit=20)
 
-```bash
-poetry run python -m pytest -v
+for message in mail.iter_mbox_messages("/path/to/mbox"):
+    print(message["subject"])
 ```
 
-If the Poetry environment is already activated:
+## Safety and limitations
+
+- pythonbird 0.3.0 reads mail and address-book data but does not change Mbox files.
+- Thunderbird metadata headers may be absent or stale; `read` is therefore optional.
+- IMAP folders must be present in the local Thunderbird profile to be readable.
+- Calendar, SMTP sending, watchers, and Windows/macOS profile support are not included.
+- Work with a backup when inspecting important profiles from custom scripts.
+
+See [GUIDE.md](GUIDE.md) for the complete API reference and [CHANGELOG.md](CHANGELOG.md) for release history.
+
+## Development
 
 ```bash
-python -m pytest -v
-```
-
-The tests use temporary mock profiles and do not read the user's real Thunderbird profile.
-
-## Development Checks
-
-Format the code:
-
-```bash
-poetry run black .
-```
-
-Run linting:
-
-```bash
+poetry install
+poetry run pytest
+poetry run black --check .
 poetry run flake8 pythonbird tests
-```
-
-Run tests:
-
-```bash
-poetry run python -m pytest -v
-```
-
-Build the package:
-
-```bash
 poetry build
 ```
 
-## Project Structure
-
-```text
-pythonbird/
-├── pythonbird/
-│   ├── __init__.py
-│   ├── core.py
-│   ├── mail.py
-│   └── contacts.py
-├── tests/
-│   ├── test_core.py
-│   ├── test_compose.py
-│   ├── test_contacts.py
-│   └── test_mail_encoding.py
-├── CHANGELOG.md
-├── GUIDE.md
-├── LICENSE
-├── README.md
-├── poetry.lock
-└── pyproject.toml
-```
-
-## Safety
-
-Pythonbird is designed to avoid modifying Thunderbird profile data:
-
-- SQLite address books are opened in read-only mode;
-- mailbox messages are read without intentionally modifying their contents;
-- Thunderbird is launched without `shell=True`;
-- attachment paths are validated before opening the compose window.
-
-Applications should still keep backups of important Thunderbird profiles. No library can guarantee zero risk when files may be changed concurrently by another process.
-
-## Version
-
-Current version: **0.2.2**
-
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+MIT. See [LICENSE](LICENSE).

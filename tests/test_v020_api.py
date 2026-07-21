@@ -1,7 +1,7 @@
 import json
 from email.message import EmailMessage
 
-from pythonbird import Attachment, Contact, Message, Thunderbird
+from pythonbird import Attachment, Message, Thunderbird
 from pythonbird.core import ThunderbirdLinux
 from pythonbird.mail import ThunderbirdMail
 

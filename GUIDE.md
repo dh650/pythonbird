@@ -1,138 +1,247 @@
-# Pythonbird Developer Guide and API Reference
+# pythonbird 0.3.0 Developer Guide
 
-This guide describes the public classes, methods, return values, and error-handling behavior available in `pythonbird` version **0.2.2**.
+This guide describes the public API of pythonbird 0.3.0. New applications should normally use the high-level `Thunderbird` facade. The low-level and legacy APIs remain available for compatibility.
 
-## Table of Contents
-
-1. [Architecture](#1-architecture)
-2. [ThunderbirdLinux](#2-thunderbirdlinux)
-3. [ThunderbirdMail](#3-thunderbirdmail)
-4. [ThunderbirdContacts](#4-thunderbirdcontacts)
-5. [Error Handling](#5-error-handling)
-6. [Safety and Concurrent Access](#6-safety-and-concurrent-access)
-
-
-# 0. Recommended High-Level API
-
-Version 0.2.0 adds the `Thunderbird` facade while preserving the 0.1.x API.
-
-```python
-from pythonbird import Thunderbird
-
-tb = Thunderbird(profile_dir="/path/to/profile", command=["thunderbird"])
-
-folders = tb.folders()
-messages = tb.messages("Inbox", limit=100)
-contacts = tb.contacts()
-results = tb.search(subject="invoice", has_attachments=True)
-tb.export_json("inbox.json")
-```
-
-Messages, contacts, and attachments are represented by typed dataclasses:
-
-```python
-message.subject
-message.sender
-message.text_body
-message.html_body
-message.attachments
-
-attachment.filename
-attachment.content_type
-attachment.size
-attachment.save("downloads/")
-
-contact.name
-contact.email
-```
-
-A message can be saved in EML format:
-
-```python
-message.save_eml("message.eml")
-```
-
-Search supports `sender`, `recipient`, `subject`, `contains`, `after`,
-`before`, `has_attachments`, and `limit`.
-
-# 1. Architecture
-
-Pythonbird provides three main components:
-
-- `ThunderbirdLinux` detects profiles, parses preferences, and opens Thunderbird compose windows.
-- `ThunderbirdMail` reads messages from Thunderbird Mbox files.
-- `ThunderbirdContacts` reads contacts from Thunderbird SQLite address books.
-
-The library does not require third-party runtime dependencies.
+## 1. Public exports
 
 ```python
 from pythonbird import (
+    __version__,
+    Attachment,
+    Contact,
+    Message,
+    Thunderbird,
     ThunderbirdContacts,
+    ThunderbirdContactsError,
     ThunderbirdLinux,
     ThunderbirdMail,
 )
 ```
 
-# 2. ThunderbirdLinux
+When the installed package metadata is available, `__version__` is read from it. A source checkout that has not been installed returns `0.3.0.dev0`.
 
-## Constructor
+## 2. High-level API
+
+### Creating a client
 
 ```python
-ThunderbirdLinux(
-    profile_dir=None,
-    command=None,
+from pythonbird import Thunderbird
+
+tb = Thunderbird()
+```
+
+Constructor:
+
+```python
+Thunderbird(profile_dir=None, command=None)
+```
+
+- `profile_dir`: explicit Thunderbird profile directory. Automatic Linux detection is used when omitted.
+- `command`: launch command sequence, such as `["thunderbird"]` or `["flatpak", "run", "org.mozilla.Thunderbird"]`.
+
+An invalid explicit profile raises `FileNotFoundError`. A command is only required for compose-window functionality, but automatic command detection occurs during construction unless a command is supplied.
+
+### Profile and accounts
+
+```python
+profile = tb.profile_dir
+accounts = tb.accounts()
+```
+
+`accounts()` returns unique configured email addresses in preference order.
+
+### Folders
+
+```python
+folders = tb.folders()
+```
+
+The result is a case-insensitively sorted list of canonical folder names. Nested Thunderbird `.sbd` paths are represented using `/`, for example:
+
+```text
+Inbox
+Archive/2026
+imap.example.com/Projects/Active
+```
+
+Local Folders omit the `Local Folders` storage component. Account directories remain in canonical names so that similarly named account folders stay distinguishable.
+
+### Reading messages
+
+```python
+messages = tb.messages(folder="Inbox", limit=100)
+```
+
+- `folder`: canonical name, unique short name, or explicit Mbox path.
+- `limit`: `None` for no limit, `0` for an empty result, or a positive integer.
+
+A negative limit raises `ValueError`. An unknown folder raises `FileNotFoundError`. An ambiguous short folder name raises `ValueError`; use the full name returned by `folders()`.
+
+### Searching
+
+```python
+results = tb.search(
+    folder="Inbox",
+    sender=None,
+    recipient=None,
+    subject=None,
+    contains=None,
+    after=None,
+    before=None,
+    has_attachments=None,
+    unread=None,
+    starred=None,
+    replied=None,
+    forwarded=None,
+    tags=None,
+    limit=None,
 )
 ```
 
-## Parameters
+Text filters are case-insensitive substring matches. `contains` checks the subject, plain-text body, and HTML body.
 
-### `profile_dir`
+`after` and `before` accept `datetime.date` or `datetime.datetime` and are inclusive. A message with an absent or invalid date does not match a date-filtered search.
 
-Optional path to a Thunderbird profile.
+Boolean filters accept `True`, `False`, or `None` to disable the filter. `unread` is derived from the optional `Message.read` value. A message whose status is unavailable matches neither `unread=True` nor `unread=False`.
 
-Accepted values:
+`tags` accepts a sequence. Matching is case-insensitive and requires every requested tag.
 
-- `str`;
-- `pathlib.Path`;
-- `None`.
-
-When omitted, Pythonbird detects the profile automatically.
+### Iterative search
 
 ```python
-tb = ThunderbirdLinux(
-    profile_dir="/home/user/.thunderbird/example.default-release",
+for message in tb.iter_search("Inbox", unread=True, limit=100):
+    print(message.subject)
+```
+
+`iter_search()` accepts the same filters as `search()` but returns a lazy iterator.
+
+### Contacts
+
+```python
+contacts = tb.contacts(database_path=None, strict=True)
+```
+
+The default database is `<profile>/abook.sqlite`. Missing database files return an empty list. SQLite or unsupported-schema errors raise `ThunderbirdContactsError` when `strict=True` and return an empty list when `strict=False`.
+
+### JSON export
+
+```python
+path = tb.export_json(
+    destination="exports/inbox.json",
+    folder="Inbox",
+    limit=100,
 )
 ```
 
-If the directory does not exist, `FileNotFoundError` is raised.
+The destination parent directory is created automatically. Attachment data is not embedded; exported attachment entries contain filename, MIME type, and size.
 
-### `command`
-
-Optional sequence containing the command used to launch Thunderbird.
-
-Regular installation:
+### Compose
 
 ```python
-tb = ThunderbirdLinux(
-    profile_dir="/path/to/profile",
-    command=["thunderbird"],
+tb.compose(
+    to="user@example.com",
+    subject="Subject",
+    body="Body",
+    attachment_path=None,
 )
 ```
 
-Flatpak installation:
+Returns the `subprocess.Popen` object. The command is launched without a shell. A supplied attachment must be an existing file.
+
+## 3. Message model
 
 ```python
-tb = ThunderbirdLinux(
-    profile_dir="/path/to/profile",
-    command=["flatpak", "run", "org.mozilla.Thunderbird"],
-)
+@dataclass(frozen=True)
+class Message:
+    id: Any
+    sender: str
+    recipients: str
+    subject: str
+    date: str
+    text_body: str = ""
+    html_body: str = ""
+    attachments: tuple[Attachment, ...] = ()
+    read: Optional[bool] = None
+    starred: bool = False
+    replied: bool = False
+    forwarded: bool = False
+    tags: tuple[str, ...] = ()
 ```
 
-When omitted, Pythonbird detects a regular Thunderbird installation or a Flatpak installation.
+`body` prefers `text_body` and falls back to `html_body`.
 
-## Profile Detection
+Thunderbird metadata is read from `X-Mozilla-Status` and `X-Mozilla-Keys`. `read=None` means no valid status header was available. The other flags safely default to `False` and tags to an empty tuple.
 
-Pythonbird checks these profile roots:
+### Saving a message
+
+```python
+message.save_eml("message.eml", overwrite=False)
+message.save_text("message.txt", overwrite=False)
+message.save_html("message.html", overwrite=False)
+message.save_attachments("downloads", overwrite=False)
+```
+
+All methods return resolved `Path` objects; `save_attachments()` returns `list[Path]`. Parent directories are created. Existing files raise `FileExistsError` unless overwriting is explicitly enabled.
+
+`save_eml()` raises `ValueError` when raw message bytes are unavailable, such as for a manually constructed `Message` without `raw_bytes`.
+
+Duplicate attachment filenames are rejected before writing to avoid partial, accidental overwrites.
+
+### Dictionary conversion
+
+```python
+item = message.to_dict()
+```
+
+The result preserves the established `from`, `to`, and body keys and adds flags and tags. Attachment objects remain objects in this conversion; `export_json()` converts them to JSON-safe metadata.
+
+## 4. Attachment model
+
+```python
+@dataclass(frozen=True)
+class Attachment:
+    filename: str
+    content_type: str
+    data: bytes
+```
+
+`size` returns the byte length.
+
+```python
+path = attachment.save("downloads", overwrite=False)
+```
+
+A directory destination uses the attachment filename. An existing file raises `FileExistsError` unless overwriting is enabled.
+
+## 5. Contact model
+
+```python
+@dataclass(frozen=True)
+class Contact:
+    name: str
+    email: str
+```
+
+`to_dict()` returns `{"name": ..., "email": ...}`.
+
+## 6. Low-level API
+
+### ThunderbirdLinux
+
+```python
+client = ThunderbirdLinux(profile_dir=None, command=None)
+```
+
+Public attributes and methods:
+
+- `profile_dir`: active profile path.
+- `base_dir`: profile root or explicit profile parent.
+- `prefs`: parsed `prefs.js` values.
+- `cmd`: command argument list.
+- `get_mail_accounts()`.
+- `open_compose_window(...)`.
+
+Automatic profile roots:
 
 ```text
 ~/.thunderbird
@@ -140,458 +249,62 @@ Pythonbird checks these profile roots:
 ~/.var/app/org.mozilla.Thunderbird/.thunderbird
 ```
 
-It then reads `profiles.ini`.
-
-The profile is selected in this order:
-
-1. `Default` value from an `Install*` section;
-2. a `Profile*` section containing `Default=1`;
-3. a directory ending in `.default-release` or `.default`.
-
-A missing profile root, `profiles.ini`, or selected profile raises `FileNotFoundError`.
-
-## Properties
-
-### `base_dir`
+### ThunderbirdMail
 
 ```python
-tb.base_dir
+mail = ThunderbirdMail(client)
 ```
 
-A `pathlib.Path` containing the Thunderbird profile root.
+Modern methods:
 
-### `profile_dir`
+- `list_folders()`
+- `resolve_folder(folder)`
+- `get_messages(folder="Inbox", limit=None)`
+- `iter_messages(folder="Inbox", limit=None)`
+- `search_messages(folder="Inbox", **filters)`
+- `iter_search_messages(folder="Inbox", **filters)`
+- `export_json(destination, folder="Inbox", limit=None)`
+
+### ThunderbirdContacts
 
 ```python
-tb.profile_dir
+address_book = ThunderbirdContacts(client)
 ```
 
-A resolved `pathlib.Path` containing the selected Thunderbird profile.
+Methods:
 
-### `prefs`
+- `get_all_contacts(database_path=None, strict=True)` returns dictionaries.
+- `get_contact_models(database_path=None, strict=True)` returns `Contact` objects.
+
+The SQLite database is opened using URI read-only mode and the expected `cards` schema is checked before reading.
+
+## 7. Legacy 0.1.x API
+
+These methods remain supported:
 
 ```python
-tb.prefs
+mail.get_local_inbox_messages(limit=None)
+mail.iter_local_inbox_messages(limit=None)
+mail.get_mbox_messages(mbox_path, limit=None)
+mail.iter_mbox_messages(mbox_path, limit=None)
 ```
 
-A dictionary containing supported values parsed from `prefs.js`.
+They return dictionaries rather than `Message` objects. New applications should prefer the modern API.
 
-Supported values include:
+## 8. Concurrency and safety
 
-- strings;
-- integers;
-- floating-point values;
-- booleans;
-- `None`;
-- unrecognized raw values.
+Version 0.3.0 is read-only for Mbox and SQLite profile data. It does not mark messages, add tags, compact folders, or update `.msf` indexes. This avoids unsafe writes while Thunderbird may be running.
 
-### `cmd`
+Mbox metadata can be missing or stale, particularly after external synchronization or index repair. Applications should treat flags as useful local metadata rather than an authoritative remote-server state.
 
-```python
-tb.cmd
+Use backed-up profiles for untrusted experiments and do not place secrets from message bodies in logs.
+
+## 9. Development checks
+
+```bash
+poetry install
+poetry run pytest
+poetry run black --check .
+poetry run flake8 pythonbird tests
+poetry build
 ```
-
-A list containing the process command.
-
-Examples:
-
-```python
-["thunderbird"]
-```
-
-or:
-
-```python
-["flatpak", "run", "org.mozilla.Thunderbird"]
-```
-
-## `get_mail_accounts`
-
-```python
-get_mail_accounts() -> list[str]
-```
-
-Returns email addresses found in preferences matching:
-
-```text
-mail.identity.*.useremail
-```
-
-Duplicate values are removed while preserving their order.
-
-```python
-for account in tb.get_mail_accounts():
-    print(account)
-```
-
-## `open_compose_window`
-
-```python
-open_compose_window(
-    to,
-    subject,
-    body,
-    attachment_path=None,
-) -> subprocess.Popen
-```
-
-Opens a native Thunderbird compose window.
-
-Parameters:
-
-- `to`: recipient address;
-- `subject`: message subject;
-- `body`: plain-text message body;
-- `attachment_path`: optional attachment path.
-
-```python
-process = tb.open_compose_window(
-    to="friend@example.com",
-    subject="Pythonbird test",
-    body="This draft was created from Python.",
-    attachment_path="/home/user/Documents/report.pdf",
-)
-```
-
-The method returns the `subprocess.Popen` instance.
-
-If the attachment does not exist, `FileNotFoundError` is raised.
-
-Pythonbird passes process arguments directly as a list and does not use `shell=True`.
-
-# 3. ThunderbirdMail
-
-## Constructor
-
-```python
-ThunderbirdMail(tb_instance)
-```
-
-```python
-mail_manager = ThunderbirdMail(tb)
-```
-
-## Message Format
-
-Messages are returned as dictionaries:
-
-```python
-{
-    "id": 0,
-    "from": "Sender <sender@example.com>",
-    "to": "Recipient <recipient@example.com>",
-    "subject": "Example subject",
-    "date": "Fri, 10 Jul 2026 12:00:00 +0300",
-    "body": "Plain-text body",
-    "text_body": "Plain-text body",
-    "html_body": "<p>HTML body</p>",
-}
-```
-
-Fields:
-
-- `id`: message identifier from the Mbox reader;
-- `from`: decoded sender header;
-- `to`: decoded recipient header;
-- `subject`: decoded subject header;
-- `date`: decoded date header;
-- `body`: plain-text body retained for compatibility;
-- `text_body`: decoded plain-text body;
-- `html_body`: decoded HTML body.
-
-MIME-encoded headers are decoded automatically.
-
-Message parts use their declared character set where possible. If decoding fails, Pythonbird falls back to UTF-8 with replacement characters.
-
-Text and HTML attachments are not treated as the message body.
-
-## `get_local_inbox_messages`
-
-```python
-get_local_inbox_messages(
-    limit=None,
-) -> list[dict]
-```
-
-Reads messages from:
-
-```text
-<profile>/Mail/Local Folders/Inbox
-```
-
-```python
-messages = mail_manager.get_local_inbox_messages(limit=100)
-```
-
-If the Inbox file does not exist, an empty list is returned.
-
-## `iter_local_inbox_messages`
-
-```python
-iter_local_inbox_messages(
-    limit=None,
-) -> Iterator[dict]
-```
-
-Iterates over Inbox messages without creating a list containing the entire mailbox.
-
-```python
-for message in mail_manager.iter_local_inbox_messages():
-    print(message["subject"])
-```
-
-This method is recommended for large mailboxes.
-
-## `get_mbox_messages`
-
-```python
-get_mbox_messages(
-    mbox_path,
-    limit=None,
-) -> list[dict]
-```
-
-Reads an arbitrary Mbox file.
-
-```python
-messages = mail_manager.get_mbox_messages(
-    "/home/user/.thunderbird/profile/Mail/Local Folders/Sent",
-    limit=50,
-)
-```
-
-## `iter_mbox_messages`
-
-```python
-iter_mbox_messages(
-    mbox_path,
-    limit=None,
-) -> Iterator[dict]
-```
-
-Iterates over an arbitrary Mbox file.
-
-If `limit` is negative, `ValueError` is raised.
-
-If the file does not exist, the iterator returns no messages.
-
-# 4. ThunderbirdContacts
-
-## Constructor
-
-```python
-ThunderbirdContacts(tb_instance)
-```
-
-```python
-contact_manager = ThunderbirdContacts(tb)
-```
-
-## `get_all_contacts`
-
-```python
-get_all_contacts(
-    database_path=None,
-    strict=True,
-) -> list[dict]
-```
-
-Reads contacts from a Thunderbird SQLite address book.
-
-### `database_path`
-
-Optional explicit path to an SQLite address book.
-
-When omitted, Pythonbird reads:
-
-```text
-<profile>/abook.sqlite
-```
-
-### `strict`
-
-Controls database error behavior.
-
-When `True`, unsupported schemas and SQLite errors raise an exception.
-
-When `False`, these errors return an empty list.
-
-Return value:
-
-```python
-[
-    {
-        "name": "Test User",
-        "email": "test@example.com",
-    }
-]
-```
-
-Contacts without a primary email address are skipped.
-
-Results are ordered by display name.
-
-```python
-contacts = contact_manager.get_all_contacts()
-
-for contact in contacts:
-    print(contact["name"], contact["email"])
-```
-
-Read another address book:
-
-```python
-contacts = contact_manager.get_all_contacts(
-    database_path="/path/to/history.sqlite",
-)
-```
-
-Use non-strict mode:
-
-```python
-contacts = contact_manager.get_all_contacts(
-    strict=False,
-)
-```
-
-## `ThunderbirdContactsError`
-
-```python
-from pythonbird import ThunderbirdContactsError
-```
-
-Raised when an address book exists but cannot be read using the expected schema.
-
-Possible causes:
-
-- corrupted SQLite database;
-- missing `cards` table;
-- missing required columns;
-- unsupported Thunderbird database schema.
-
-# 5. Error Handling
-
-```python
-from pythonbird import (
-    ThunderbirdContacts,
-    ThunderbirdContactsError,
-    ThunderbirdLinux,
-)
-
-try:
-    tb = ThunderbirdLinux()
-    contacts = ThunderbirdContacts(tb).get_all_contacts()
-
-except FileNotFoundError as error:
-    print(f"Required file, profile, executable, or attachment is missing: {error}")
-
-except PermissionError as error:
-    print(f"Access was denied: {error}")
-
-except ThunderbirdContactsError as error:
-    print(f"Address book error: {error}")
-
-except ValueError as error:
-    print(f"Invalid argument: {error}")
-```
-
-## Common Errors
-
-### Thunderbird profile directory was not found
-
-Possible causes:
-
-- Thunderbird has not been launched by the current user;
-- the profile uses a custom path;
-- the installation type is not supported by automatic detection.
-
-Supply the profile explicitly:
-
-```python
-tb = ThunderbirdLinux(
-    profile_dir="/custom/profile/path",
-)
-```
-
-### Thunderbird executable was not found
-
-This only affects functionality that launches Thunderbird.
-
-Supply the command explicitly:
-
-```python
-tb = ThunderbirdLinux(
-    profile_dir="/path/to/profile",
-    command=["thunderbird"],
-)
-```
-
-### Empty accounts list
-
-No supported `mail.identity.*.useremail` values were found in `prefs.js`.
-
-### Empty message list
-
-Possible causes:
-
-- the selected Mbox file does not exist;
-- the mailbox is empty;
-- a different account or storage folder is being used.
-
-### Empty contacts list
-
-Possible causes:
-
-- `abook.sqlite` does not exist;
-- no contacts contain a primary email address;
-- `strict=False` suppressed an address book error.
-
-# 6. Safety and Concurrent Access
-
-Pythonbird avoids intentional writes to Thunderbird profile data.
-
-## SQLite Address Books
-
-SQLite address books are opened using:
-
-```text
-mode=ro
-```
-
-This prevents Pythonbird from modifying the database.
-
-## Mbox Files
-
-Mbox files are opened for reading and closed after iteration finishes.
-
-Pythonbird does not intentionally edit or rewrite mailbox files. Another process may still update the same mailbox while it is being read.
-
-Applications requiring a stable snapshot should copy the mailbox before processing it.
-
-## Process Launching
-
-Thunderbird is started with a list of command arguments:
-
-```python
-subprocess.Popen(
-    ["thunderbird", "-compose", compose_arguments],
-)
-```
-
-Pythonbird does not use:
-
-```python
-shell=True
-```
-
-This prevents message fields from being interpreted as shell commands.
-
-## Backups
-
-Read-only behavior reduces risk but cannot provide an absolute guarantee against all filesystem or concurrent-access problems.
-
-Keep backups of important Thunderbird profiles.
-
-# License
-
-This project is licensed under the [MIT License](LICENSE).

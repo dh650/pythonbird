@@ -47,6 +47,11 @@ class Message:
     text_body: str = ""
     html_body: str = ""
     attachments: tuple[Attachment, ...] = ()
+    read: Optional[bool] = None
+    starred: bool = False
+    replied: bool = False
+    forwarded: bool = False
+    tags: tuple[str, ...] = ()
     raw_bytes: Optional[bytes] = field(default=None, repr=False, compare=False)
 
     @property
@@ -54,7 +59,7 @@ class Message:
         return self.text_body or self.html_body
 
     def to_dict(self) -> dict[str, Any]:
-        """Return the legacy dictionary representation used by v0.1.x."""
+        """Return a serialisable representation compatible with v0.1.x."""
         return {
             "id": self.id,
             "from": self.sender,
@@ -65,19 +70,70 @@ class Message:
             "text_body": self.text_body,
             "html_body": self.html_body,
             "attachments": list(self.attachments),
+            "read": self.read,
+            "starred": self.starred,
+            "replied": self.replied,
+            "forwarded": self.forwarded,
+            "tags": list(self.tags),
         }
 
     def save_eml(self, destination: Union[Path, str], overwrite: bool = False) -> Path:
         if self.raw_bytes is None:
             raise ValueError("Raw message data is not available.")
 
+        return self._write_text_or_bytes(
+            destination, self.raw_bytes, overwrite=overwrite
+        )
+
+    def save_text(self, destination: Union[Path, str], overwrite: bool = False) -> Path:
+        """Save the decoded plain-text body using UTF-8."""
+        return self._write_text_or_bytes(
+            destination, self.text_body, overwrite=overwrite
+        )
+
+    def save_html(self, destination: Union[Path, str], overwrite: bool = False) -> Path:
+        """Save the decoded HTML body using UTF-8."""
+        return self._write_text_or_bytes(
+            destination, self.html_body, overwrite=overwrite
+        )
+
+    def save_attachments(
+        self, destination: Union[Path, str], overwrite: bool = False
+    ) -> list[Path]:
+        """Save all attachments into a directory and return their paths."""
+        directory = Path(destination).expanduser().resolve()
+        directory.mkdir(parents=True, exist_ok=True)
+
+        paths = [directory / attachment.filename for attachment in self.attachments]
+        if len(paths) != len(set(paths)):
+            raise FileExistsError("Message contains duplicate attachment filenames.")
+        if not overwrite:
+            existing = next((path for path in paths if path.exists()), None)
+            if existing is not None:
+                raise FileExistsError(f"Attachment already exists: {existing}")
+
+        return [
+            attachment.save(path, overwrite=overwrite)
+            for attachment, path in zip(self.attachments, paths)
+        ]
+
+    @staticmethod
+    def _write_text_or_bytes(
+        destination: Union[Path, str],
+        content: Union[str, bytes],
+        *,
+        overwrite: bool,
+    ) -> Path:
         path = Path(destination).expanduser().resolve()
         path.parent.mkdir(parents=True, exist_ok=True)
 
         if path.exists() and not overwrite:
             raise FileExistsError(f"Message file already exists: {path}")
 
-        path.write_bytes(self.raw_bytes)
+        if isinstance(content, bytes):
+            path.write_bytes(content)
+        else:
+            path.write_text(content, encoding="utf-8")
         return path
 
 

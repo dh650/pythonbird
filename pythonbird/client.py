@@ -39,6 +39,9 @@ class Thunderbird:
     def search(self, folder: Union[str, Path] = "Inbox", **filters) -> list[Message]:
         return self.mail.search_messages(folder=folder, **filters)
 
+    def iter_search(self, folder: Union[str, Path] = "Inbox", **filters):
+        return self.mail.iter_search_messages(folder=folder, **filters)
+
     def contacts(self, database_path=None, strict: bool = True) -> list[Contact]:
         return self.address_book.get_contact_models(
             database_path=database_path, strict=strict
